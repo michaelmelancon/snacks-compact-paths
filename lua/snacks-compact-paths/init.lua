@@ -21,10 +21,73 @@ local function is_preserved(name)
   return utils.should_preserve_segment(name, config.preserve_dirs)
 end
 
+-- Auto-expand a freshly opened tree node through an empty directory chain.
+-- A node is "empty" if its only visible child is a single directory.
+-- We open that child and recurse until the chain ends.
+-- Only called on nodes that are open but NOT yet expanded (freshly opened),
+-- so it won't re-open directories the user just closed.
+local function auto_expand_from_node(Tree, node, filter_opts)
+  if not node.dir or not node.open then return end
+  if node.expanded then return end
+
+  Tree:expand(node)
+
+  local visible_dirs = {}
+  local total_visible = 0
+  for _, child in pairs(node.children) do
+    local visible = true
+    if child.hidden and not (filter_opts and filter_opts.hidden) then
+      visible = false
+    end
+    if visible then
+      total_visible = total_visible + 1
+      if child.dir then
+        table.insert(visible_dirs, child)
+      end
+    end
+  end
+
+  -- Empty directory: exactly 1 visible child and it's a directory
+  if total_visible == 1 and #visible_dirs == 1 then
+    local child = visible_dirs[1]
+    child.open = true
+    -- Recurse: child is freshly open (not yet expanded)
+    auto_expand_from_node(Tree, child, filter_opts)
+  end
+end
+
+-- Walk the tree looking for freshly opened nodes (open but not expanded)
+-- and auto-expand them through empty directory chains.
+local function auto_expand_tree(cwd, filter_opts)
+  local ok, Tree = pcall(require, "snacks.explorer.tree")
+  if not ok or not Tree then return end
+
+  local root = Tree:node(cwd)
+  if not root then return end
+
+  local function visit(node)
+    if not node.dir or not node.open then return end
+
+    if not node.expanded then
+      -- Freshly opened node: auto-expand through empty chain
+      auto_expand_from_node(Tree, node, filter_opts)
+    else
+      -- Already expanded: recurse into open children to find fresh ones
+      for _, child in pairs(node.children) do
+        if child.dir and child.open then
+          visit(child)
+        end
+      end
+    end
+  end
+
+  visit(root)
+end
+
 -- Detect single-child directory chains and merge them into compact items.
--- A chain is a sequence of directories D1 -> D2 -> ... -> Dn where each Di
--- has exactly one child (Di+1), and Di's name is not preserved.
--- The chain is merged into one item with a compact acronym name (e.g. "c.e.m").
+-- A directory is compactable only if it's an "empty folder": its sole child
+-- is another directory (no files). The chain is merged into one item with
+-- a compact acronym name (e.g. "c.e.m").
 local function compact_items(items)
   -- Build a map of parent -> list of children
   local children_of = {}
@@ -38,13 +101,13 @@ local function compact_items(items)
   end
 
   -- A directory is compactable if it's a non-root, non-preserved directory
-  -- with exactly one child in the emitted items.
+  -- whose only child is a single directory (empty folder).
   local function is_compactable(item)
     if not item or not item.dir then return false end
     if not item.parent then return false end
     if is_preserved(basename(item.file)) then return false end
     local kids = children_of[item]
-    return kids ~= nil and #kids == 1
+    return kids ~= nil and #kids == 1 and kids[1].dir
   end
 
   local skip = {} -- items to remove from output (intermediate chain members)
@@ -152,12 +215,21 @@ local function setup_snacks_integration()
       return orig_fn
     end
 
-    -- Buffer all items, compact chains, then emit
     return function(cb)
+      -- Auto-expand empty directory chains before the tree walk.
+      -- Only targets freshly opened nodes (open but not yet expanded),
+      -- so it won't undo a user's close action.
+      if ctx and ctx.filter then
+        auto_expand_tree(ctx.filter.cwd, opts)
+      end
+
+      -- Buffer all items from the tree walk
       local all_items = {}
       orig_fn(function(item)
         table.insert(all_items, item)
       end)
+
+      -- Compact chains and emit
       local compacted = compact_items(all_items)
       for _, item in ipairs(compacted) do
         cb(item)
