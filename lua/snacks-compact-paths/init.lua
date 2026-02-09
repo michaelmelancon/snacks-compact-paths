@@ -143,8 +143,14 @@ local function compact_items(items)
           local head = chain[1]
           local tail = chain[#chain]
 
-          -- Mark the head with a compact display name
-          head._compact_name = utils.generate_smart_acronym(names, config.acronym_style)
+          -- Acronym the leading segments, keep the last dir name in full
+          -- e.g. component/agent/version -> c.a.version
+          local leading = {}
+          for i = 1, #names - 1 do
+            table.insert(leading, names[i])
+          end
+          head._compact_name = utils.generate_smart_acronym(leading, config.acronym_style)
+            .. "." .. names[#names]
           -- Point the head at the tail's path so toggle/navigation works
           head.file = tail.file
           head.text = tail.file
