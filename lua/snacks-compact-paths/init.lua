@@ -13,39 +13,115 @@ local default_config = {
 local config = vim.tbl_deep_extend("force", {}, default_config)
 local snacks_wrapped = false
 
--- Compact a path by abbreviating non-preserved intermediate directory segments
-local function compact_path(path)
-  if not config.enabled or not path or path == "" then
-    return path
-  end
+local function basename(filepath)
+  return vim.fn.fnamemodify(filepath, ":t")
+end
 
-  local parts = vim.split(path, "/", { plain = true })
+local function is_preserved(name)
+  return utils.should_preserve_segment(name, config.preserve_dirs)
+end
 
-  local filtered = {}
-  for _, part in ipairs(parts) do
-    if part ~= "" then
-      table.insert(filtered, part)
+-- Detect single-child directory chains and merge them into compact items.
+-- A chain is a sequence of directories D1 -> D2 -> ... -> Dn where each Di
+-- has exactly one child (Di+1), and Di's name is not preserved.
+-- The chain is merged into one item with a compact acronym name (e.g. "c.e.m").
+local function compact_items(items)
+  -- Build a map of parent -> list of children
+  local children_of = {}
+  for _, item in ipairs(items) do
+    if item.parent then
+      if not children_of[item.parent] then
+        children_of[item.parent] = {}
+      end
+      table.insert(children_of[item.parent], item)
     end
   end
 
-  if #filtered <= 2 then
-    return path
+  -- A directory is compactable if it's a non-root, non-preserved directory
+  -- with exactly one child in the emitted items.
+  local function is_compactable(item)
+    if not item or not item.dir then return false end
+    if not item.parent then return false end
+    if is_preserved(basename(item.file)) then return false end
+    local kids = children_of[item]
+    return kids ~= nil and #kids == 1
   end
 
-  local compacted = utils.create_compacted_path(filtered, config)
-  return table.concat(compacted, "/")
+  local skip = {} -- items to remove from output (intermediate chain members)
+
+  for _, item in ipairs(items) do
+    if is_compactable(item) and not skip[item] then
+      -- Only process chain heads: compactable items whose parent is NOT
+      -- itself a compactable item (or whose parent was already skipped).
+      local parent_compactable = item.parent
+        and is_compactable(item.parent)
+        and not skip[item.parent]
+      if not parent_compactable then
+        -- Build the chain by following single-child directories
+        local chain = { item }
+        local current = item
+        while is_compactable(current) do
+          local child = children_of[current][1]
+          if child.dir and not is_preserved(basename(child.file)) then
+            table.insert(chain, child)
+            current = child
+          else
+            break
+          end
+        end
+
+        if #chain >= 2 then
+          -- Generate compact name from all chain segment names
+          local names = {}
+          for _, c in ipairs(chain) do
+            table.insert(names, basename(c.file))
+          end
+
+          local head = chain[1]
+          local tail = chain[#chain]
+
+          -- Mark the head with a compact display name
+          head._compact_name = utils.generate_smart_acronym(names, config.acronym_style)
+          -- Point the head at the tail's path so toggle/navigation works
+          head.file = tail.file
+          head.text = tail.file
+          head.open = tail.open
+
+          -- Reparent: children of the tail become children of the head
+          local tail_kids = children_of[tail]
+          if tail_kids then
+            for _, kid in ipairs(tail_kids) do
+              kid.parent = head
+            end
+          end
+          children_of[head] = tail_kids
+
+          -- Mark intermediate and tail items for removal
+          for i = 2, #chain do
+            skip[chain[i]] = true
+          end
+        end
+      end
+    end
+  end
+
+  -- Rebuild the item list without skipped items
+  local result = {}
+  for _, item in ipairs(items) do
+    if not skip[item] then
+      table.insert(result, item)
+    end
+  end
+  return result
 end
 
--- Integrate with Snacks Explorer by wrapping Snacks.explorer() to inject
--- a transform that compacts grouped directory names (names containing "/").
 local function setup_snacks_integration()
-  if snacks_wrapped then
-    return
-  end
+  if snacks_wrapped then return end
 
-  local ok, Snacks = pcall(require, "snacks")
-  if not ok or not Snacks then
-    -- Snacks not yet loaded; retry once after VimEnter
+  -- Wrap the explorer finder in snacks.picker.source.explorer
+  local ok_source, explorer_source = pcall(require, "snacks.picker.source.explorer")
+  if not ok_source or not explorer_source or not explorer_source.explorer then
+    -- Module not available yet; retry after VimEnter
     vim.api.nvim_create_autocmd("VimEnter", {
       once = true,
       callback = function()
@@ -55,35 +131,61 @@ local function setup_snacks_integration()
     return
   end
 
-  if type(Snacks.explorer) ~= "function" then
-    return
-  end
-
   snacks_wrapped = true
-  local orig_explorer = Snacks.explorer
 
-  Snacks.explorer = function(opts)
-    if config.enabled then
-      opts = opts or {}
-      local orig_transform = opts.transform
-      opts.transform = function(item)
-        if orig_transform then
-          item = orig_transform(item) or item
-        end
-        if item then
-          -- Compact grouped directory names (paths containing "/")
-          if item.text and type(item.text) == "string" and item.text:find("/") then
-            item.text = compact_path(item.text)
-          end
-        end
-        return item
+  local orig_explorer = explorer_source.explorer
+  explorer_source.explorer = function(opts, ctx)
+    local orig_fn = orig_explorer(opts, ctx)
+    if not config.enabled then
+      return orig_fn
+    end
+
+    -- Skip compaction during search/filter mode (async finder)
+    local searching = false
+    if ctx and ctx.filter then
+      local ok, empty = pcall(function() return ctx.filter:is_empty() end)
+      if ok then
+        searching = not empty
       end
     end
-    return orig_explorer(opts)
+    if searching then
+      return orig_fn
+    end
+
+    -- Buffer all items, compact chains, then emit
+    return function(cb)
+      local all_items = {}
+      orig_fn(function(item)
+        table.insert(all_items, item)
+      end)
+      local compacted = compact_items(all_items)
+      for _, item in ipairs(compacted) do
+        cb(item)
+      end
+    end
+  end
+
+  -- Patch Format.filename to display _compact_name instead of the basename
+  local ok_fmt, Format = pcall(require, "snacks.picker.format")
+  if ok_fmt and Format and Format.filename then
+    local orig_filename = Format.filename
+    Format.filename = function(item, picker, ...)
+      if item._compact_name then
+        -- Temporarily swap item.file so fnamemodify(:t) returns the compact name
+        local real_file = item.file
+        local parent_dir = vim.fn.fnamemodify(real_file, ":h")
+        item.file = parent_dir .. "/" .. item._compact_name
+        item._path = nil -- invalidate cached path
+        local ret = orig_filename(item, picker, ...)
+        item.file = real_file
+        item._path = nil
+        return ret
+      end
+      return orig_filename(item, picker, ...)
+    end
   end
 end
 
--- Setup function
 function M.setup(user_config)
   M._configured = true
   config = vim.tbl_deep_extend("force", default_config, user_config or {})
@@ -99,7 +201,16 @@ function M.setup(user_config)
   end, { desc = "Toggle Snacks Compact Paths" })
 end
 
--- Public API
-M.compact_path = compact_path
+M.compact_path = function(path)
+  if not config.enabled or not path or path == "" then return path end
+  local parts = vim.split(path, "/", { plain = true })
+  local filtered = {}
+  for _, part in ipairs(parts) do
+    if part ~= "" then table.insert(filtered, part) end
+  end
+  if #filtered <= 2 then return path end
+  local compacted = utils.create_compacted_path(filtered, config)
+  return table.concat(compacted, "/")
+end
 
 return M
