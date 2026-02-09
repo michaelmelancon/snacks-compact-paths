@@ -1,0 +1,143 @@
+*snacks-compact-paths.txt*    Snacks Compact Paths Plugin
+
+Author: Michael Melancon
+Version: 1.0.0
+
+==============================================================================
+CONTENTS                                                      *snacks-compact-paths*
+
+1. Introduction ................ |snacks-compact-paths-introduction|
+2. Installation ................ |snacks-compact-paths-installation|
+3. Configuration ................ |snacks-compact-paths-configuration|
+4. Commands ..................... |snacks-compact-paths-commands|
+5. Examples ..................... |snacks-compact-paths-examples|
+6. Troubleshooting ............. |snacks-compact-paths-troubleshooting|
+
+==============================================================================
+INTRODUCTION                                    *snacks-compact-paths-introduction*
+
+Snacks Compact Paths is a Neovim plugin that integrates with Snacks Explorer to
+collapse empty folder paths into single character acronyms, similar to
+IntelliJ's compacted package view. This helps reduce visual clutter when
+working with deeply nested directory structures.
+
+Features:
+- Collapses empty intermediate directories into single character acronyms
+- Configurable minimum path length for compaction
+- Preserves important directory names
+- Integrates seamlessly with Snacks Explorer
+- Customizable acronym generation
+
+==============================================================================
+INSTALLATION                                    *snacks-compact-paths-installation*
+
+Using lazy.nvim:
+>
+    {
+      "michaelmelancon/snacks-compact-paths",
+      dependencies = { "stevearc/snacks.nvim" },
+      config = function()
+        require("snacks-compact-paths").setup()
+      end,
+    }
+<
+
+Using packer.nvim:
+>
+    use {
+      "michaelmelancon/snacks-compact-paths",
+      requires = { "stevearc/snacks.nvim" },
+      config = function()
+        require("snacks-compact-paths").setup()
+      end,
+    }
+<
+
+Manual installation:
+1. Clone the repository to your Neovim plugin directory
+2. Add the plugin to your Neovim configuration
+
+==============================================================================
+CONFIGURATION                                  *snacks-compact-paths-configuration*
+
+The plugin can be configured by passing a configuration table to the setup
+function:
+
+>
+    require("snacks-compact-paths").setup({
+      min_path_length = 3,        -- Minimum path length to trigger compaction
+      preserve_dirs = {           -- Directories to never compact
+        "src", "lib", "include", "test", "tests"
+      },
+      acronym_style = "first",    -- "first" or "vowels" for acronym generation
+      enabled = true,             -- Enable/disable the plugin
+    })
+<
+
+Configuration options:
+
+min_path_length (number, default: 3)
+    Minimum length of directory name to trigger compaction. Directories
+    shorter than this will be considered for compaction.
+
+preserve_dirs (table, default: {"src", "lib", "include", "test", "tests", "docs", "assets", "public"})
+    List of directory names that should never be compacted, regardless of
+    their length.
+
+acronym_style (string, default: "first")
+    Style of acronym generation:
+    - "first": Take the first character of each directory name
+    - "vowels": Remove vowels and take the first few consonants
+
+enabled (boolean, default: true)
+    Enable or disable the plugin.
+
+==============================================================================
+COMMANDS                                        *snacks-compact-paths-commands*
+
+:SnacksCompactPathsToggle
+    Toggle the plugin on/off.
+
+:SnacksCompactPathsRefresh
+    Refresh the Snacks Explorer with current compacted path settings.
+
+==============================================================================
+EXAMPLES                                        *snacks-compact-paths-examples*
+
+Before compaction:
+>
+    project/
+    ├── src/
+    │   └── main/
+    │       └── java/
+    │           └── com/
+    │               └── example/
+    │                   └── myapp/
+    │                       └── Main.java
+<
+
+After compaction:
+>
+    project/
+    ├── src/
+    │   └── main/
+    │       └── java/
+    │           └── c.e.m/
+    │               └── Main.java
+<
+
+==============================================================================
+TROUBLESHOOTING                              *snacks-compact-paths-troubleshooting*
+
+Q: The plugin doesn't seem to be working.
+A: Make sure Snacks Explorer is installed and properly configured. The plugin
+   requires snacks.nvim to function.
+
+Q: Some directories are being compacted when they shouldn't be.
+A: Add the directory names to the preserve_dirs configuration option.
+
+Q: The acronyms are too short/long.
+A: Adjust the min_path_length setting or change the acronym_style.
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:
