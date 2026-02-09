@@ -49,6 +49,9 @@ vim = {
   api = {
     nvim_create_user_command = function(name, callback, opts)
       print("Created command: " .. name)
+    end,
+    nvim_create_autocmd = function(event, opts)
+      -- no-op in demo
     end
   }
 }

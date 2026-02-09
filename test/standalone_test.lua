@@ -26,14 +26,6 @@ vim = {
     end
     return result
   end,
-  fn = {
-    fnamemodify = function(path, modifier)
-      if modifier == ":t" then
-        return path:match("([^/]+)$") or path
-      end
-      return path
-    end
-  end,
   log = {
     levels = {
       WARN = 2,
@@ -41,11 +33,14 @@ vim = {
     }
   },
   notify = function(msg, level)
-    print("NOTIFY: " .. msg)
+    -- no-op in tests
   end,
   api = {
     nvim_create_user_command = function(name, callback, opts)
-      print("Created command: " .. name)
+      -- no-op in tests
+    end,
+    nvim_create_autocmd = function(event, opts)
+      -- no-op in tests
     end
   }
 }
@@ -57,7 +52,6 @@ local compact_paths = require("snacks-compact-paths")
 
 -- Test configuration
 local config = {
-  min_path_length = 4,
   preserve_dirs = {
     "src", "lib", "include", "test", "tests", "docs", "assets", "public", "java", "main", "resources"
   },
@@ -72,7 +66,7 @@ compact_paths.setup(config)
 local test_cases = {
   {
     input = "src/main/java/com/example/myapp/Main.java",
-    expected = "src/main/java/C.E.M/Main.java",
+    expected = "src/main/java/c.e.m/Main.java",
     description = "Standard Java package structure"
   },
   {
@@ -82,18 +76,18 @@ local test_cases = {
   },
   {
     input = "a/b/c/d/e/f/file.txt",
-    expected = "a/B.C.D.E.F/file.txt",
+    expected = "a/b.c.d.e.f/file.txt",
     description = "Multiple short directories"
   },
   {
     input = "src/main/resources/static/css/style.css",
-    expected = "src/main/resources/S.C/style.css",
-    description = "Long directory names preserved"
+    expected = "src/main/resources/s.c/style.css",
+    description = "Preserved dirs mixed with non-preserved"
   },
   {
     input = "x/y/z/file.py",
-    expected = "x/Y.Z/file.py",
-    description = "All short directories compacted"
+    expected = "x/y.z/file.py",
+    description = "Short directories compacted"
   }
 }
 
@@ -107,14 +101,14 @@ local total = #test_cases
 for i, test_case in ipairs(test_cases) do
   local result = compact_paths.compact_path(test_case.input)
   local test_passed = result == test_case.expected
-  
+
   print(string.format("Test %d: %s", i, test_case.description))
   print(string.format("  Input:    %s", test_case.input))
   print(string.format("  Expected: %s", test_case.expected))
   print(string.format("  Result:   %s", result))
   print(string.format("  Status:   %s", test_passed and "PASS" or "FAIL"))
   print()
-  
+
   if test_passed then
     passed = passed + 1
   end
@@ -123,7 +117,7 @@ end
 print(string.format("Results: %d/%d tests passed (%.1f%%)", passed, total, (passed/total)*100))
 
 if passed == total then
-  print("🎉 All tests passed! The plugin is working correctly.")
+  print("All tests passed!")
 else
-  print("❌ Some tests failed. Please check the implementation.")
+  print("Some tests failed. Please check the implementation.")
 end

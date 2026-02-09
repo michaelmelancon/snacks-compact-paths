@@ -7,18 +7,8 @@ if exists("g:loaded_snacks_compact_paths")
 endif
 let g:loaded_snacks_compact_paths = 1
 
-" Default configuration
-if !exists("g:snacks_compact_paths_config")
-  let g:snacks_compact_paths_config = {
-    \ 'min_path_length': 3,
-    \ 'preserve_dirs': ['src', 'lib', 'include', 'test', 'tests', 'docs', 'assets', 'public'],
-    \ 'acronym_style': 'first',
-    \ 'enabled': 1
-    \ }
-endif
-
-" Initialize the plugin
+" Initialize the plugin with defaults if user hasn't called setup() explicitly
 augroup SnacksCompactPaths
   autocmd!
-  autocmd VimEnter * lua require('snacks-compact-paths').setup()
+  autocmd VimEnter * ++once lua if not require('snacks-compact-paths')._configured then require('snacks-compact-paths').setup() end
 augroup END

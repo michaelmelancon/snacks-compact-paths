@@ -16,7 +16,7 @@ Using lazy.nvim:
 ```lua
 {
   "michaelmelancon/snacks-compact-paths",
-  dependencies = { "stevearc/snacks.nvim" },
+  dependencies = { "folke/snacks.nvim" },
   config = function()
     require("snacks-compact-paths").setup()
   end,

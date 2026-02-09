@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - Neovim 0.7+
-- Snacks Explorer plugin (`stevearc/snacks.nvim`)
+- Snacks Explorer plugin (`folke/snacks.nvim`)
 
 ## Installation
 
@@ -14,7 +14,7 @@ Add this to your Neovim configuration:
 ```lua
 {
   "michaelmelancon/snacks-compact-paths",
-  dependencies = { "stevearc/snacks.nvim" },
+  dependencies = { "folke/snacks.nvim" },
   config = function()
     require("snacks-compact-paths").setup()
   end,
@@ -28,7 +28,7 @@ Add this to your Neovim configuration:
 ```lua
 use {
   "michaelmelancon/snacks-compact-paths",
-  requires = { "stevearc/snacks.nvim" },
+  requires = { "folke/snacks.nvim" },
   config = function()
     require("snacks-compact-paths").setup()
   end,
